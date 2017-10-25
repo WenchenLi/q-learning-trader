@@ -11,7 +11,7 @@ import numpy as np
 #     """Return CSV file path given ticker symbol."""
 #     return os.path.join(base_dir, "{}.csv".format(str(symbol)))
 
-def symbol_to_path(symbol, base_dir=os.path.join(".", "yahoo_finance_data")):
+def symbol_to_path(symbol, base_dir=os.path.join("data", "yahoo_finance_data")):
     """Return CSV file path given ticker symbol."""
     return os.path.join(base_dir, "{}.csv".format(str(symbol)))
 
