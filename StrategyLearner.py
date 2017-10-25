@@ -96,13 +96,7 @@ class StrategyLearner(object):
         self.portfolio[CASH] = float(sv)
         self.portfolio[STOCK] = 0
 
-    def addEvidence(self, symbol="SPY",
-                    sd=dt.datetime(2008, 1, 1),
-                    ed=dt.datetime(2009, 1, 1),
-                    sv=10000):
-
-        self.init_portfolio(sv)
-
+    def get_raw_data(self, symbol, sd, ed):
         # record in panda format
         dates = pd.date_range(sd, ed)
         prices_all = ut.get_data([symbol], dates)  # automatically adds SPY
@@ -114,6 +108,9 @@ class StrategyLearner(object):
         tf = RawTradeFeatures(symbol, sd, ed)
         price, price_SPY = tf.get_adj_price()
 
+        return dates,prices_all, trades, portfolio_value, tf, price, price_SPY
+
+    def get_benchmark(self,symbol, price_SPY, prices_all,sv ):
         # buy and hold the benchmark
         benchmark_price = price_SPY.as_matrix()
         benchmark_values = prices_all[[symbol, ]]  # only portfolio symbols
@@ -122,8 +119,9 @@ class StrategyLearner(object):
         for i, p in enumerate(benchmark_price):
             benchmark_values.values[i, :] = cash + p * benchmark_num_stock
 
-        # Discretize the values of the features, this part can replaced by deep learning
+        return benchmark_values
 
+    def get_derived_data(self,symbol, prices_all,sd,ed):
         # macd
         macd = ut.norm(ut.get_macd(prices_all[symbol])["MACD"].as_matrix())
 
@@ -133,12 +131,88 @@ class StrategyLearner(object):
         bb_ub = ut.norm(bb['upper_band'].as_matrix())
         bb_lb = ut.norm(bb['lower_band'].as_matrix())
 
-        # normalize
+        return macd, bb,bb_rm, bb_ub, bb_lb
+
+    def get_finalized_input(self,price, symbol,macd):
+        # input to model or later process
         l = price[symbol].as_matrix()
         price_array = l.copy()
 
-        #final factor sent to model
         x = macd.reshape((-1, 1))
+
+        return price_array, x
+
+    def perform_actions_update_trades_value(self,action,price_array,trades,i):
+        """
+        given action perform the action and update the trades value.
+        :param action:
+        :param price_array:
+        :param trades:
+        :param i:
+        :return:
+        """
+        if action == 0:  # do nothing
+            if self.verbose: print "do nothing"
+        elif action == 1:  # buy
+            if self.current_holding_state == 0 or self.current_holding_state == 2:  # holding nothing or short
+                self.portfolio[CASH] -= self.shares_to_buy_or_sell * price_array[i]
+                self.portfolio[STOCK] += self.shares_to_buy_or_sell
+            elif self.current_holding_state == 1:  # long
+                if self.verbose: print "buy but long already, nothing to do"
+
+        else:  # action sell
+            if self.current_holding_state == 0 or self.current_holding_state == 1:  # holding nothing or long
+                self.portfolio[CASH] += self.shares_to_buy_or_sell * price_array[i]
+                self.portfolio[STOCK] -= self.shares_to_buy_or_sell
+            elif self.current_holding_state == 2:  # short
+                if self.verbose: print "sell but short already, nothing to do"
+
+        assert np.abs(self.portfolio[STOCK]) <= self.shares_to_buy_or_sell
+        # update self.holding state
+        if self.portfolio[STOCK] == self.shares_to_buy_or_sell:
+            self.current_holding_state = 1
+        elif self.portfolio[STOCK] == -self.shares_to_buy_or_sell:
+            self.current_holding_state = 2
+        elif self.portfolio[STOCK] == 0:
+            self.current_holding_state = 0
+        else:
+            if self.verbose: print self.portfolio, "current portfolio is not valid"
+
+        trades.values[i, :] = self.shares_to_buy_or_sell
+        if action == 0:
+            trades.values[i, :] *= 0
+        elif action == 1:
+            trades.values[i, :] *= 1
+        else:
+            trades.values[i, :] *= -1
+
+        return trades
+
+    def save_plot_and_model(self,benchmark_values, portfolio_value,trades):
+        # save transaction and portfolio image and training records
+        benchmark_values = benchmark_values.rename(columns={'SPY': "benchmark"})
+        portfolio_value = portfolio_value.rename(columns={'SPY': "q-learn-trader"})
+        p_value_all = portfolio_value.join(benchmark_values)
+        ut.plot_data(trades, title="transactions_train", ylabel="amount", save_image=True,
+                     save_dir=self.current_working_dir)
+        ut.plot_data(p_value_all, title="portfolio value_train", ylabel="USD", save_image=True,
+                     save_dir=self.current_working_dir)
+        self.learner.save_model(table_name=self.current_working_dir + dyna_q_trader_model_save_name)
+
+    def addEvidence(self, symbol="SPY",
+                    sd=dt.datetime(2008, 1, 1),
+                    ed=dt.datetime(2009, 1, 1),
+                    sv=10000):
+
+        self.init_portfolio(sv)
+
+        dates, prices_all, trades, portfolio_value, tf, price, price_SPY = self.get_raw_data(symbol, sd, ed)
+
+        benchmark_values = self.get_benchmark( symbol, price_SPY, prices_all, sv)
+
+        macd, bb, bb_rm, bb_ub, bb_lb = self.get_derived_data( symbol, prices_all, sd, ed)
+
+        price_array, x = self.get_finalized_input( price, symbol, macd)
 
         # discretize
         kmeans_model = KMeans(n_clusters=self.num_feature_state, random_state=0, )
@@ -173,40 +247,7 @@ class StrategyLearner(object):
                 # Implement the action the learner returned (BUY, SELL, NOTHING), and update portfolio value
                 last_portfolio_value = self.get_current_portfolio_values(price_array[i])  # sum(self.portfolio_values)
 
-                if action == 0:  # do nothing
-                    if self.verbose: print "do nothing"
-                elif action == 1:  # buy
-                    if self.current_holding_state == 0 or self.current_holding_state == 2:  # holding nothing or short
-                        self.portfolio[CASH] -= self.shares_to_buy_or_sell * price_array[i]
-                        self.portfolio[STOCK] += self.shares_to_buy_or_sell
-                    elif self.current_holding_state == 1:  # long
-                        if self.verbose: print "buy but long already, nothing to do"
-
-                else:  # action sell
-                    if self.current_holding_state == 0 or self.current_holding_state == 1:  # holding nothing or long
-                        self.portfolio[CASH] += self.shares_to_buy_or_sell * price_array[i]
-                        self.portfolio[STOCK] -= self.shares_to_buy_or_sell
-                    elif self.current_holding_state == 2:  # short
-                        if self.verbose: print "sell but short already, nothing to do"
-
-                assert np.abs(self.portfolio[STOCK]) <= self.shares_to_buy_or_sell
-                # update self.holding state
-                if self.portfolio[STOCK] == self.shares_to_buy_or_sell:
-                    self.current_holding_state = 1
-                elif self.portfolio[STOCK] == -self.shares_to_buy_or_sell:
-                    self.current_holding_state = 2
-                elif self.portfolio[STOCK] == 0:
-                    self.current_holding_state = 0
-                else:
-                    if self.verbose: print self.portfolio, "current portfolio is not valid"
-
-                trades.values[i, :] = self.shares_to_buy_or_sell
-                if action == 0:
-                    trades.values[i, :] *= 0
-                elif action == 1:
-                    trades.values[i, :] *= 1
-                else:
-                    trades.values[i, :] *= -1
+                trades = self.perform_actions_update_trades_value(action, price_array, trades, i)
 
                 portfolio_value.values[i, :] = self.get_current_portfolio_values(price_array[i])
                 self.last_r = (self.get_current_portfolio_values(price_array[i + 1]) - last_portfolio_value) / float(sv)
@@ -227,15 +268,7 @@ class StrategyLearner(object):
                 # decay alpha
                 self.learner.decay_alpha()
 
-        # save transaction and portfolio image and training records
-        benchmark_values = benchmark_values.rename(columns={'SPY': "benchmark"})
-        portfolio_value = portfolio_value.rename(columns={'SPY': "q-learn-trader"})
-        p_value_all = portfolio_value.join(benchmark_values)
-        ut.plot_data(trades, title="transactions_train", ylabel="amount", save_image=True,
-                     save_dir=self.current_working_dir)
-        ut.plot_data(p_value_all, title="portfolio value_train", ylabel="USD", save_image=True,
-                     save_dir=self.current_working_dir)
-        self.learner.save_model(table_name=self.current_working_dir + dyna_q_trader_model_save_name)
+        self.save_plot_and_model(benchmark_values, portfolio_value, trades)
 
         trade_return = self.get_current_portfolio_values(price_array[-1]) / sv - 1.0
         return trade_return
@@ -250,40 +283,13 @@ class StrategyLearner(object):
 
         self.init_portfolio(sv)
 
-        # record in panda format
-        dates = pd.date_range(sd, ed)
-        prices_all = ut.get_data([symbol], dates)  # automatically adds SPY
-        trades = prices_all[[symbol, ]]  # only portfolio symbols
-        portfolio_value = prices_all[[symbol, ]]
+        dates, prices_all, trades, portfolio_value, tf, price, price_SPY = self.get_raw_data(symbol, sd, ed)
 
-        # Select several technical features, and compute their values for the training data
-        tf = RawTradeFeatures(symbol, sd, ed)
-        price, price_SPY = tf.get_adj_price()
+        benchmark_values = self.get_benchmark(symbol, price_SPY, prices_all, sv)
 
-        # buy and hold benchmark
-        benchmark_price = price_SPY.as_matrix()
-        benchmark_values = prices_all[['SPY', ]]  # only portfolio symbols
-        benchmark_num_stock = int(sv / benchmark_price[0])
-        cash = sv - float(benchmark_num_stock * benchmark_price[0])
-        for i, p in enumerate(benchmark_price):
-            benchmark_values.values[i, :] = cash + p * benchmark_num_stock
-        # Discretize the values of the features, this part can replaced by deep learning
+        macd, bb, bb_rm, bb_ub, bb_lb = self.get_derived_data( symbol, prices_all, sd, ed)
 
-        # macd
-        macd = ut.norm(ut.get_macd(prices_all[symbol])["MACD"].as_matrix())
-
-        # bollinger band
-        bb = ut.Bollinger_Bands_given_sym_dates([symbol], sd, ed)
-        bb_rm = ut.norm(bb['rolling_mean'].as_matrix())
-        bb_ub = ut.norm(bb['upper_band'].as_matrix())
-        bb_lb = ut.norm(bb['lower_band'].as_matrix())
-
-        # normalize
-        l = price[symbol].as_matrix()
-        price_array = l.copy()
-
-        # combine all
-        x = macd.reshape((-1, 1))
+        price_array, x = self.get_finalized_input( price, symbol, macd)
 
         # kmeans model load
         kmeans_model = pickle.load(open(self.current_working_dir + kmeans_model_save_name, 'rb'))
@@ -314,41 +320,7 @@ class StrategyLearner(object):
             # Implement the action the learner returned (BUY, SELL, NOTHING), and update portfolio value
             last_portfolio_value = self.get_current_portfolio_values(price_array[i])  # sum(self.portfolio_values)
 
-            if action == 0:  # do nothing
-                if self.verbose: print "do nothing"
-            elif action == 1:  # buy
-                if self.current_holding_state == 0 or self.current_holding_state == 2:  # holding nothing or short
-                    self.portfolio[CASH] -= self.shares_to_buy_or_sell * price_array[i]
-                    self.portfolio[STOCK] += self.shares_to_buy_or_sell
-                elif self.current_holding_state == 1:  # long
-                    if self.verbose: print "buy but long already, nothing to do"
-
-            else:  # action sell
-                if self.current_holding_state == 0 or self.current_holding_state == 1:  # holding nothing or long
-                    self.portfolio[CASH] += self.shares_to_buy_or_sell * price_array[i]
-                    self.portfolio[STOCK] -= self.shares_to_buy_or_sell
-                elif self.current_holding_state == 2:  # short
-                    if self.verbose: print "sell but short already, nothing to do"
-
-            assert np.abs(self.portfolio[STOCK]) <= self.shares_to_buy_or_sell
-            # update self.holding state
-            if self.portfolio[STOCK] == self.shares_to_buy_or_sell:
-                self.current_holding_state = 1
-            elif self.portfolio[STOCK] == -self.shares_to_buy_or_sell:
-                self.current_holding_state = 2
-            elif self.portfolio[STOCK] == 0:
-                self.current_holding_state = 0
-            else:
-                if self.verbose: print self.portfolio, "current portfolio is not valid"
-
-            # if i==len(feature_states)-1:  # skip since last day no trading feedback, instead record the transaction
-            trades.values[i, :] = self.shares_to_buy_or_sell
-            if action == 0:
-                trades.values[i, :] *= 0
-            elif action == 1:
-                trades.values[i, :] *= 1
-            else:
-                trades.values[i, :] *= -1
+            trades = self.perform_actions_update_trades_value(action, price_array, trades, i)
 
             portfolio_value.values[i, :] = self.get_current_portfolio_values(price_array[i])
 
@@ -357,15 +329,8 @@ class StrategyLearner(object):
 
         self.last_cumulated_return = self.get_current_portfolio_values(price_array[-1]) / float(sv) - 1
 
-        benchmark_values = benchmark_values.rename(columns={'SPY': "benchmark"})
-        portfolio_value = portfolio_value.rename(columns={'SPY': "q-learn-trader"})
-        p_value_all = portfolio_value.join(benchmark_values)
+        self.save_plot_and_model(benchmark_values, portfolio_value, trades)
 
-        # save transaction and portfolio image
-        ut.plot_data(trades, title="transactions_test", ylabel="amount", save_image=True,
-                     save_dir=self.current_working_dir)
-        ut.plot_data(p_value_all, title="portfolio value_test", ylabel="USD", save_image=True,
-                     save_dir=self.current_working_dir)
         trade_return = self.get_current_portfolio_values(price_array[-1]) / sv - 1.0
         if self.verbose: print "cumulated return=:", trade_return
         return trades, trade_return
