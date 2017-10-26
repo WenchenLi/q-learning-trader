@@ -7,11 +7,8 @@ import pickle
 import datetime as dt
 import numpy as np
 
-# def symbol_to_path(symbol, base_dir=os.path.join("..", "data")):
-#     """Return CSV file path given ticker symbol."""
-#     return os.path.join(base_dir, "{}.csv".format(str(symbol)))
 
-def symbol_to_path(symbol, base_dir=os.path.join("data", "yahoo_finance_data")):
+def symbol_to_path(symbol, base_dir=os.path.join(".", "yahoo_finance_data")):
     """Return CSV file path given ticker symbol."""
     return os.path.join(base_dir, "{}.csv".format(str(symbol)))
 
@@ -74,7 +71,6 @@ def Bollinger_Bands_given_sym_dates(sym, start_date,end_date,window_size=20, num
   stock_price = get_data(sym, dates)
 
   rolling_mean, upper_band, lower_band = Bollinger_Bands(stock_price["SPY"], window_size,num_of_std)
-  # print rolling_mean, upper_band,lower_band
   retrive_dates = pd.date_range(start_date, end_date)
   result = pd.DataFrame({'rolling_mean': rolling_mean, 'upper_band': upper_band, 'lower_band': lower_band},index=dates)
   result = result.dropna()

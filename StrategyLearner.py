@@ -58,7 +58,6 @@ class StrategyLearner(object):
     Compute the reward for the last action
     Query the learner with the current state and reward to get an action
     Implement the action the learner returned (BUY, SELL, NOTHING), and update portfolio value
-  Repeat the above loop multiple times until cumulative return stops improving.
   """
 
     # constructor
@@ -111,6 +110,9 @@ class StrategyLearner(object):
         return dates,prices_all, trades, portfolio_value, tf, price, price_SPY
 
     def get_benchmark(self,symbol, price_SPY, prices_all,sv ):
+        """
+        get buy and hold benchmark result
+        """
         # buy and hold the benchmark
         benchmark_price = price_SPY.as_matrix()
         benchmark_values = prices_all[[symbol, ]]  # only portfolio symbols
@@ -122,6 +124,9 @@ class StrategyLearner(object):
         return benchmark_values
 
     def get_derived_data(self,symbol, prices_all,sd,ed):
+        """
+        get derived data macd and bollinger band given the raw data
+        """
         # macd
         macd = ut.norm(ut.get_macd(prices_all[symbol])["MACD"].as_matrix())
 
@@ -134,6 +139,9 @@ class StrategyLearner(object):
         return macd, bb,bb_rm, bb_ub, bb_lb
 
     def get_finalized_input(self,price, symbol,macd):
+        """
+        reformatted the finalized input macd and price
+        """
         # input to model or later process
         l = price[symbol].as_matrix()
         price_array = l.copy()
@@ -144,12 +152,7 @@ class StrategyLearner(object):
 
     def perform_actions_update_trades_value(self,action,price_array,trades,i):
         """
-        given action perform the action and update the trades value.
-        :param action:
-        :param price_array:
-        :param trades:
-        :param i:
-        :return:
+        given action perform the action and record the trades value.
         """
         if action == 0:  # do nothing
             if self.verbose: print "do nothing"
@@ -188,21 +191,33 @@ class StrategyLearner(object):
 
         return trades
 
-    def save_plot_and_model(self,benchmark_values, portfolio_value,trades):
+    def save_plot_and_model(self,benchmark_values, portfolio_value,trades,save_plot=False):
+        """
+        save trained model and plot result if save_plot set to True
+        """
         # save transaction and portfolio image and training records
         benchmark_values = benchmark_values.rename(columns={'SPY': "benchmark"})
         portfolio_value = portfolio_value.rename(columns={'SPY': "q-learn-trader"})
-        p_value_all = portfolio_value.join(benchmark_values)
-        ut.plot_data(trades, title="transactions_train", ylabel="amount", save_image=True,
-                     save_dir=self.current_working_dir)
-        ut.plot_data(p_value_all, title="portfolio value_train", ylabel="USD", save_image=True,
-                     save_dir=self.current_working_dir)
+        if save_plot:
+            p_value_all = portfolio_value.join(benchmark_values)
+            ut.plot_data(trades, title="transactions_train", ylabel="amount", save_image=True,
+                         save_dir=self.current_working_dir)
+            ut.plot_data(p_value_all, title="portfolio value_train", ylabel="USD", save_image=True,
+                         save_dir=self.current_working_dir)
         self.learner.save_model(table_name=self.current_working_dir + dyna_q_trader_model_save_name)
 
     def addEvidence(self, symbol="SPY",
                     sd=dt.datetime(2008, 1, 1),
                     ed=dt.datetime(2009, 1, 1),
                     sv=10000):
+        """
+        train q learner
+        :param symbol:security symbol
+        :param sd: start date
+        :param ed: end data
+        :param sv: start fund value
+        :return: return of the trade
+        """
 
         self.init_portfolio(sv)
 
@@ -280,7 +295,14 @@ class StrategyLearner(object):
                    sd=dt.datetime(2009, 1, 1),
                    ed=dt.datetime(2010, 1, 1),
                    sv=10000):
-
+        """
+        test q learner
+        :param symbol:security symbol
+        :param sd: start date
+        :param ed: end data
+        :param sv: start fund value
+        :return: trades: record of the trades, trade_return: return of the trade
+        """
         self.init_portfolio(sv)
 
         dates, prices_all, trades, portfolio_value, tf, price, price_SPY = self.get_raw_data(symbol, sd, ed)

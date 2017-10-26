@@ -15,8 +15,8 @@ def test_code(train_q=None,out_q=None,verb = True, test_only=False,save_dir=".",
     if not test_only:
         # set parameters for training the learner
         sym = "SPY"
-        stdate =dt.datetime(2016,4,30)
-        enddate =dt.datetime(2017,1,3) # just a few days for "shake out"
+        stdate =dt.datetime(2006,4,30)
+        enddate =dt.datetime(2007,1,3) # just a few days for "shake out"
 
         # train the learner
         trade_return_train = learner.addEvidence(symbol = sym, sd = stdate,
@@ -25,8 +25,8 @@ def test_code(train_q=None,out_q=None,verb = True, test_only=False,save_dir=".",
             train_q.put(trade_return_train)
     # set parameters for testing
     sym = "SPY"
-    stdate =dt.datetime(2017,1,3)
-    enddate =dt.datetime(2017,9,30)
+    stdate =dt.datetime(2007,1,3)
+    enddate =dt.datetime(2007,12,31)
 
     # get some data for reference
     syms=[sym]

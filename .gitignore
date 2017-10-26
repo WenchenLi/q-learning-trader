@@ -5,3 +5,7 @@
 /example/
 /references/
 /training_dir/
+/mc3p4_qlearning_trader/
+/mc3p2_qlearning_robot/
+mc3p2_qlearning_robot/
+mc3p4_qlearning_trader/

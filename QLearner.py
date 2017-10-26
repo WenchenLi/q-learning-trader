@@ -24,8 +24,8 @@ from util import save, load
 
 class QLearner(object):
     """
-  The constructor QLearner() should reserve space for keeping track of Q[s, a] for the number of states and actions. It initialize Q[] with all zeros.
-
+  The constructor QLearner() reserve space for keeping track of Q[s, a] for the number of states and actions.
+  It initialize Q[] with all zeros.
   num_states integer, the number of states to consider
   num_actions integer, the number of actions available.
   alpha float, the learning rate used in the update rule. Should range between 0.0 and 1.0 with 0.2 as a typical value.
