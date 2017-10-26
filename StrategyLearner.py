@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """
 Q trader strategy learner. States are classified by kmeans now, Implementation 2017 Wenchen Li
 """

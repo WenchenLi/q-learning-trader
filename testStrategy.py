@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """
 Test a Strategy Learner.  (c) 2017 Wenchen Li
 """

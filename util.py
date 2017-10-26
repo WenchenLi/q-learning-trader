@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """ Utility code."""
 
 # Copyright (C) 2017  Wenchen Li
