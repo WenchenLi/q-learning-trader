@@ -19,7 +19,7 @@ util.py: some helper functions for the model
 please see [this link](https://www.evernote.com/shard/s120/sh/0fa6db4e-6cc8-4e48-bf50-1a8909a2d1e6/30725de60925143d)
 
 or the evernote screenshot below:
-![experiments result](screencapture-evernote-client-web-2018-11-30-19_32_54.jpg)
+![experiments result](screencapture-evernote-client-web-2018-11-30-19_44_58.jpg)
 
 
 
